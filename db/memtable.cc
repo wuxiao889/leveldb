@@ -28,9 +28,9 @@ size_t MemTable::ApproximateMemoryUsage() { return arena_.MemoryUsage(); }
 int MemTable::KeyComparator::operator()(const char* aptr,
                                         const char* bptr) const {
   // Internal keys are encoded as length-prefixed strings.
-  Slice a = GetLengthPrefixedSlice(aptr);
+  Slice a = GetLengthPrefixedSlice(aptr); // 去掉长度前缀
   Slice b = GetLengthPrefixedSlice(bptr);
-  return comparator.Compare(a, b);
+  return comparator.Compare(a, b);  //一次比较user_key , seqnum 
 }
 
 // Encode a suitable internal key target for "target" and return it.
@@ -73,9 +73,10 @@ class MemTableIterator : public Iterator {
 
 Iterator* MemTable::NewIterator() { return new MemTableIterator(&table_); }
 
+// internal key : user_key sequencenum type
 void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
                    const Slice& value) {
-  // Format of an entry is concatenation of:
+  // Format of an entry is concatenation of:      memtable_key
   //  key_size     : varint32 of internal_key.size()
   //  key bytes    : char[internal_key.size()]
   //  tag          : uint64((sequence << 8) | type)
@@ -88,13 +89,13 @@ void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
                              internal_key_size + VarintLength(val_size) +
                              val_size;
   char* buf = arena_.Allocate(encoded_len);
-  char* p = EncodeVarint32(buf, internal_key_size);
-  std::memcpy(p, key.data(), key_size);
-  p += key_size;
-  EncodeFixed64(p, (s << 8) | type);
+  char* p = EncodeVarint32(buf, internal_key_size);     //  key_size
+  std::memcpy(p, key.data(), key_size);         //  internal_key
+  p += key_size;  
+  EncodeFixed64(p, (s << 8) | type);             // tag
   p += 8;
-  p = EncodeVarint32(p, val_size);
-  std::memcpy(p, value.data(), val_size);
+  p = EncodeVarint32(p, val_size);                // value_size
+  std::memcpy(p, value.data(), val_size);         // value
   assert(p + val_size == buf + encoded_len);
   table_.Insert(buf);
 }
@@ -102,11 +103,14 @@ void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
 bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
   Slice memkey = key.memtable_key();
   Table::Iterator iter(&table_);
+  // 调用skipList.FindGreaterOrEqual()
+  // internalKeyComparator 对 key 升序，对 seqNum 降序
+  // 跳过有更大的seqNum同值的entries
   iter.Seek(memkey.data());
   if (iter.Valid()) {
     // entry format is:
     //    klength  varint32
-    //    userkey  char[klength]
+    //    userkey  char[klength]  // 这个klength 包括了tag
     //    tag      uint64
     //    vlength  varint32
     //    value    char[vlength]

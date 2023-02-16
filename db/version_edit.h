@@ -26,6 +26,11 @@ struct FileMetaData {
   InternalKey largest;   // Largest internal key served by table
 };
 
+// A Compaction encapsulates information about a compaction.
+// compact过程中有一系列改变当前 Version 的操作
+// (FileNumber增加，删除input sstable，增加输出的 sstable...)
+// 为了缩小 Version 切换的时间点，将这些操作封装成 VersionEdit 
+// compact 完成时，将 VersionEdit 中的操作一次应用到当前 Version
 class VersionEdit {
  public:
   VersionEdit() { Clear(); }
@@ -85,7 +90,7 @@ class VersionEdit {
 
   typedef std::set<std::pair<int, uint64_t>> DeletedFileSet;
 
-  std::string comparator_;
+  std::string comparator_;    // 用 comparator 名字保证排序逻辑
   uint64_t log_number_;
   uint64_t prev_log_number_;
   uint64_t next_file_number_;
@@ -96,9 +101,9 @@ class VersionEdit {
   bool has_next_file_number_;
   bool has_last_sequence_;
 
-  std::vector<std::pair<int, InternalKey>> compact_pointers_;
-  DeletedFileSet deleted_files_;
-  std::vector<std::pair<int, FileMetaData>> new_files_;
+  std::vector<std::pair<int, InternalKey>> compact_pointers_; // 要更新的level
+  DeletedFileSet deleted_files_;    // 要删除的 sstable文件
+  std::vector<std::pair<int, FileMetaData>> new_files_; // compact output
 };
 
 }  // namespace leveldb

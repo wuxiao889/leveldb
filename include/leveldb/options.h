@@ -56,6 +56,7 @@ struct LEVELDB_EXPORT Options {
   // errors.  This may have unforeseen ramifications: for example, a
   // corruption of one DB entry may cause a large number of entries to
   // become unreadable or for the entire DB to become unopenable.
+  // 激进的检查。corruption 损坏。
   bool paranoid_checks = false;
 
   // Use the specified object to interact with the environment,
@@ -79,11 +80,17 @@ struct LEVELDB_EXPORT Options {
   // so you may wish to adjust this parameter to control memory usage.
   // Also, a larger write buffer will result in a longer recovery time
   // the next time the database is opened.
+  // memtable 的最大size  4 M
+  // 大的容量会提升性能，但是在数据库重新打开时会恢复更久时间
   size_t write_buffer_size = 4 * 1024 * 1024;
 
   // Number of open files that can be used by the DB.  You may need to
   // increase this if your database has a large working set (budget
   // one open file per 2MB of working set).
+  // db中打开文件的最大个数
+  // 这些文件包括基本的CURRENT/LOG/MANIFEST/LOCK/SSTABLE
+  // sstable打开时，会将 index 信息加入 tablecache
+  // 把 max_open_files - 10 作为 table cache的最大容量
   int max_open_files = 1000;
 
   // Control over blocks (user data is stored in a set of blocks, and
@@ -97,11 +104,13 @@ struct LEVELDB_EXPORT Options {
   // block size specified here corresponds to uncompressed data.  The
   // actual size of the unit read from disk may be smaller if
   // compression is enabled.  This parameter can be changed dynamically.
+  // block未压缩时大约的大小
   size_t block_size = 4 * 1024;
 
   // Number of keys between restart points for delta encoding of keys.
   // This parameter can be changed dynamically.  Most clients should
   // leave this parameter alone.
+  // 前缀压缩的区间长度
   int block_restart_interval = 16;
 
   // Leveldb will write up to this amount of bytes to a file before
@@ -112,6 +121,7 @@ struct LEVELDB_EXPORT Options {
   // compactions and hence longer latency/performance hiccups.
   // Another reason to increase this parameter might be when you are
   // initially populating a large database.
+  // 
   size_t max_file_size = 2 * 1024 * 1024;
 
   // Compress blocks using the specified compression algorithm.  This
@@ -121,7 +131,9 @@ struct LEVELDB_EXPORT Options {
   // compression.
   //
   // Typical speeds of kSnappyCompression on an Intel(R) Core(TM)2 2.4GHz:
-  //    ~200-500MB/s compression
+  //    ~200-500MB/s compression  
+  //          快于大多数持久化硬盘 hdd/ssd hdd 150M/s ssd(sata) 500M/s ssd(nvme) 3000M/s 
+  //           所以不值得切换到NoCompression
   //    ~400-800MB/s decompression
   // Note that these speeds are significantly faster than most
   // persistent storage speeds, and therefore it is typically never
@@ -150,12 +162,14 @@ struct LEVELDB_EXPORT ReadOptions {
 
   // Should the data read for this iteration be cached in memory?
   // Callers may wish to set this field to false for bulk scans.
+  // 批量扫描关闭 why?
   bool fill_cache = true;
 
   // If "snapshot" is non-null, read as of the supplied snapshot
   // (which must belong to the DB that is being read and which must
   // not have been released).  If "snapshot" is null, use an implicit
   // snapshot of the state at the beginning of this read operation.
+  // 指定读取的快照
   const Snapshot* snapshot = nullptr;
 };
 
@@ -177,7 +191,11 @@ struct LEVELDB_EXPORT WriteOptions {
   // crash semantics as the "write()" system call.  A DB write
   // with sync==true has similar crash semantics to a "write()"
   // system call followed by "fsync()".
-  bool sync = false;
+  // write 时，记 binlog 之后，是否对 binlog 做 sync。
+  // write会在从操作系统页缓存刷新后完成
+  // 如果只是进程崩溃，而不是机器崩溃，没有写操作会丢失 
+  // https://blog.csdn.net/javaAnPou/article/details/125446496
+  bool sync = false;  
 };
 
 }  // namespace leveldb

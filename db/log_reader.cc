@@ -31,6 +31,7 @@ Reader::Reader(SequentialFile* file, Reporter* reporter, bool checksum,
 Reader::~Reader() { delete[] backing_store_; }
 
 bool Reader::SkipToInitialBlock() {
+  // 对齐，取KBlockSize整数倍
   const size_t offset_in_block = initial_offset_ % kBlockSize;
   uint64_t block_start_location = initial_offset_ - offset_in_block;
 
@@ -235,7 +236,7 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
     if (type == kZeroType && length == 0) {
       // Skip zero length record without reporting any drops since
       // such records are produced by the mmap based writing code in
-      // env_posix.cc that preallocates file regions.
+      // env_posix.cc that preallocates file regions. ？？？？
       buffer_.clear();
       return kBadRecord;
     }

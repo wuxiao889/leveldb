@@ -70,6 +70,7 @@ Status PosixError(const std::string& context, int error_number) {
 // Currently used to limit read-only file descriptors and mmap file usage
 // so that we do not run out of file descriptors or virtual memory, or run into
 // kernel performance problems for very large databases.
+// 限制文件描述符和虚拟内存的使用，避免资源耗尽
 class Limiter {
  public:
   // Limit maximum number of resources to |max_acquires|.
@@ -92,7 +93,7 @@ class Limiter {
         acquires_allowed_.fetch_sub(1, std::memory_order_relaxed);
 
     if (old_acquires_allowed > 0) return true;
-
+    // 用尽了
     int pre_increment_acquires_allowed =
         acquires_allowed_.fetch_add(1, std::memory_order_relaxed);
 
@@ -209,9 +210,9 @@ class PosixRandomAccessFile final : public RandomAccessFile {
     assert(fd != -1);
 
     Status status;
-    ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));
+    ssize_t read_size = ::pread(fd, scratch, n, static_cast<off_t>(offset));  // pread 来实现原子的定位加访问功能
     *result = Slice(scratch, (read_size < 0) ? 0 : read_size);
-    if (read_size < 0) {
+    if (read_size < 0) {  // ??? 
       // An error: return a non-ok status.
       status = PosixError(filename_, errno);
     }
@@ -290,6 +291,7 @@ class PosixWritableFile final : public WritableFile {
     }
   }
 
+  // 写到一个64KB缓冲区，缓冲区写满时调用write写到fd
   Status Append(const Slice& data) override {
     size_t write_size = data.size();
     const char* write_data = data.data();
@@ -329,6 +331,7 @@ class PosixWritableFile final : public WritableFile {
     return status;
   }
 
+  // 讲缓存写入内核缓冲区
   Status Flush() override { return FlushBuffer(); }
 
   Status Sync() override {
@@ -358,9 +361,17 @@ class PosixWritableFile final : public WritableFile {
   }
 
   Status WriteUnbuffered(const char* data, size_t size) {
+    // Note that a successful write() may transfer fewer than count bytes.  Such partial writes can occur for various reasons; for example, because there was insufficient space on the disk
+    //   device  to write all of the requested bytes, or because a blocked write() to a socket, pipe, or similar was interrupted by a signal handler after it had transferred some, but before
+    //    it had transferred all of the requested bytes.  In the event of a partial write, the caller can make another write() call to transfer the remaining bytes. 
     while (size > 0) {
+      // A successful return from write() does not make any guarantee that data has been committed to disk.  On some filesystems, including NFS, it does not even  guarantee  that  space  has
+      //  successfully been reserved for the data.  In this case, some errors might be delayed until a future write(), fsync(2), or even close(2).  The only way to be sure is to call fsync(2)
+      //  after you are done writing all your data.
       ssize_t write_result = ::write(fd_, data, size);
       if (write_result < 0) {
+        // If a write() is interrupted by a signal handler before any bytes are written, then the call fails with the error EINTR; if it is interrupted after at least one byte has  been  writ‐
+        //  ten, the call succeeds, and returns the number of bytes written.
         if (errno == EINTR) {
           continue;  // Retry
         }
@@ -406,7 +417,25 @@ class PosixWritableFile final : public WritableFile {
 #endif  // HAVE_FULLFSYNC
 
 #if HAVE_FDATASYNC
-    bool sync_success = ::fdatasync(fd) == 0;
+    // https://blog.csdn.net/cywosp/article/details/8767327
+    /*
+     fsync() transfers ("flushes") all modified in-core data of (i.e., modified buffer cache pages for) the file referred to by the file descriptor fd to the disk device (or other perma‐
+       nent storage device) so that all changed information can be retrieved even if the system crashes or is rebooted.  This includes writing through or flushing a disk cache if  present.
+       The call blocks until the device reports that the transfer has completed.
+
+       As well as flushing the file data, fsync() also flushes the metadata information associated with the file (see inode(7)).
+
+       Calling fsync() does not necessarily ensure that the entry in the directory containing the file has also reached disk.  For that an explicit fsync() on a file descriptor for the di‐
+       rectory is also needed.
+
+       fdatasync() is similar to fsync(), but does not flush modified metadata unless that metadata is needed in order to allow a subsequent data retrieval to be  correctly  handled.   For
+       example, changes to st_atime or st_mtime (respectively, time of last access and time of last modification; see inode(7)) do not require flushing because they are not necessary for a
+       subsequent data read to be handled correctly.  On the other hand, a change to the file size (st_size, as made by say ftruncate(2)), would require a metadata flush.
+
+       The aim of fdatasync() is to reduce disk activity for applications that do not require all metadata to be synchronized with the disk.
+    */
+    bool sync_success = ::fdatasync(fd) == 0; 
+    // 有些情况下会比 fsync减少磁盘IO, 比如文件仅仅是修改时间变了，就不会写metadata。当文件大小变化时，和 fsync是相同的
 #else
     bool sync_success = ::fsync(fd) == 0;
 #endif  // HAVE_FDATASYNC
@@ -537,6 +566,10 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
+  // mmap_limiter.Acquire() => PosixMmapReadableFile
+  // !mmap_limiter.Acquire() => PosixRandomAccessFile
+  // fd_limiter.Acquire() => has_permanent_fd_ =
+  // !fd_limiter.Acquire() => The file will be opened on every read.
   Status NewRandomAccessFile(const std::string& filename,
                              RandomAccessFile** result) override {
     *result = nullptr;
@@ -546,6 +579,8 @@ class PosixEnv : public Env {
     }
 
     if (!mmap_limiter_.Acquire()) {
+      // mmap_limiter_ 资源耗尽，
+      // 用文件描述符读取，当打开的文件描述符过多，每次read后关闭，否则一直打开
       *result = new PosixRandomAccessFile(filename, fd, &fd_limiter_);
       return Status::OK();
     }
@@ -563,6 +598,7 @@ class PosixEnv : public Env {
         status = PosixError(filename, errno);
       }
     }
+    // After the mmap() call has returned, the file descriptor, fd, can be closed immediately without invalidating the mapping.
     ::close(fd);
     if (!status.ok()) {
       mmap_limiter_.Release();
@@ -773,8 +809,8 @@ class PosixEnv : public Env {
       GUARDED_BY(background_work_mutex_);
 
   PosixLockTable locks_;  // Thread-safe.
-  Limiter mmap_limiter_;  // Thread-safe.
-  Limiter fd_limiter_;    // Thread-safe.
+  Limiter mmap_limiter_;  // Thread-safe. 对64位 1000个， 32 位0 个
+  Limiter fd_limiter_;    // Thread-safe. 
 };
 
 // Return the maximum number of concurrent mmaps.

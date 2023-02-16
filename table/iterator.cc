@@ -13,7 +13,7 @@ Iterator::Iterator() {
 
 Iterator::~Iterator() {
   if (!cleanup_head_.IsEmpty()) {
-    cleanup_head_.Run();
+    cleanup_head_.Run();  
     for (CleanupNode* node = cleanup_head_.next; node != nullptr;) {
       node->Run();
       CleanupNode* next_node = node->next;

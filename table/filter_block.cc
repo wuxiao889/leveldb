@@ -19,7 +19,7 @@ FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
     : policy_(policy) {}
 
 void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
-  uint64_t filter_index = (block_offset / kFilterBase);
+  uint64_t filter_index = (block_offset / kFilterBase); // Generate new filter every 2KB of data datablock >= 4kB
   assert(filter_index >= filter_offsets_.size());
   while (filter_index > filter_offsets_.size()) {
     GenerateFilter();
@@ -57,7 +57,7 @@ void FilterBlockBuilder::GenerateFilter() {
   }
 
   // Make list of keys from flattened key structure
-  start_.push_back(keys_.size());  // Simplify length computation
+  start_.push_back(keys_.size());  // Simplify length computation， 方便计算最后一个key长度
   tmp_keys_.resize(num_keys);
   for (size_t i = 0; i < num_keys; i++) {
     const char* base = keys_.data() + start_[i];
@@ -80,7 +80,7 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
   size_t n = contents.size();
   if (n < 5) return;  // 1 byte for base_lg_ and 4 for start of offset array
   base_lg_ = contents[n - 1];
-  uint32_t last_word = DecodeFixed32(contents.data() + n - 5);
+  uint32_t last_word = DecodeFixed32(contents.data() + n - 5);    // array_offset
   if (last_word > n - 5) return;
   data_ = contents.data();
   offset_ = data_ + last_word;

@@ -12,7 +12,10 @@
 // restart points, and can be used to do a binary search when looking
 // for a particular key.  Values are stored as-is (without compression)
 // immediately following the corresponding key.
-//
+// 为了节省空间，我们丢掉key的公共前缀。每 K 个 key我们不使用这个前缀压缩而保存整个key，这称为重启点。
+// 在 block结尾保存所有重启点的偏移，用来在二分搜索时查找。
+// value紧跟在key后面。
+// k/v 对的存储格式
 // An entry for a particular key-value pair has the form:
 //     shared_bytes: varint32
 //     unshared_bytes: varint32
@@ -26,6 +29,14 @@
 //     num_restarts: uint32
 // restarts[i] contains the offset within the block of the ith restart point.
 
+
+/*
+BlockBuilder对key的存储是前缀压缩的，因为对有序的字符串，能极大减少存储空间。
+为了兼顾查找效率，每K个key, 不使用前缀压缩而是存储整个key，称为重启点。
+Block在结尾记录所有重启点的偏移，可以用二分查找指定的key。
+
+Block分为存储区和重启点存储区两部分。
+*/
 #include "table/block_builder.h"
 
 #include <algorithm>
@@ -59,7 +70,8 @@ size_t BlockBuilder::CurrentSizeEstimate() const {
 }
 
 Slice BlockBuilder::Finish() {
-  // Append restart array
+  // Append restart array   // 压入重启点信息，并返回buffer
+  // The returned slice will remain valid for the lifetime of this builder or until Reset() is called.
   for (size_t i = 0; i < restarts_.size(); i++) {
     PutFixed32(&buffer_, restarts_[i]);
   }
@@ -68,13 +80,16 @@ Slice BlockBuilder::Finish() {
   return Slice(buffer_);
 }
 
+// 在block中使用压缩算法添加kv对，并设置重启点
 void BlockBuilder::Add(const Slice& key, const Slice& value) {
   Slice last_key_piece(last_key_);
   assert(!finished_);
   assert(counter_ <= options_->block_restart_interval);
   assert(buffer_.empty()  // No values yet?
-         || options_->comparator->Compare(key, last_key_piece) > 0);
+         || options_->comparator->Compare(key, last_key_piece) > 0);  // 保证新加入的key要比任何key大
   size_t shared = 0;
+  // 如果计数器 counter < options_->block_restart_interval
+  // 采用前缀算法压缩key，否则把key作为一个重启点。
   if (counter_ < options_->block_restart_interval) {
     // See how much sharing to do with previous string
     const size_t min_length = std::min(last_key_piece.size(), key.size());

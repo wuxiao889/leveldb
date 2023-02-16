@@ -18,6 +18,9 @@ void PutFixed64(std::string* dst, uint64_t value) {
   dst->append(buf, sizeof(buf));
 }
 
+// 3 < 128 0000011
+// 1 0000 0000 256 < 1 << 14 。  1000 0000 0000 0010
+// 0 1000 0000 128 < 1 << 14     1000 0000 0000 0001
 char* EncodeVarint32(char* dst, uint32_t v) {
   // Operate on characters as unsigneds
   uint8_t* ptr = reinterpret_cast<uint8_t*>(dst);
@@ -25,7 +28,7 @@ char* EncodeVarint32(char* dst, uint32_t v) {
   if (v < (1 << 7)) {
     *(ptr++) = v;
   } else if (v < (1 << 14)) {
-    *(ptr++) = v | B;
+    *(ptr++) = v | B;  // 高位置1表示未结束
     *(ptr++) = v >> 7;
   } else if (v < (1 << 21)) {
     *(ptr++) = v | B;
@@ -83,6 +86,8 @@ int VarintLength(uint64_t v) {
   return len;
 }
 
+// 11111111 11111111 11111111 11111111
+// 11111111 11111111 11111111 11111111 00001111
 const char* GetVarint32PtrFallback(const char* p, const char* limit,
                                    uint32_t* value) {
   uint32_t result = 0;

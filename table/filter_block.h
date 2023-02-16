@@ -42,10 +42,11 @@ class FilterBlockBuilder {
   void GenerateFilter();
 
   const FilterPolicy* policy_;
-  std::string keys_;             // Flattened key contents
+  std::string keys_;             // Flattened key contents key追加到keys中
   std::vector<size_t> start_;    // Starting index in keys_ of each key
+                                 // 每个key再keys中的偏移，为了做差分计算keys中每个key的长度，
   std::string result_;           // Filter data computed so far
-  std::vector<Slice> tmp_keys_;  // policy_->CreateFilter() argument
+  std::vector<Slice> tmp_keys_;  // policy_->CreateFilter() argument    
   std::vector<uint32_t> filter_offsets_;
 };
 

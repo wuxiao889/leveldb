@@ -38,6 +38,8 @@ TableCache::TableCache(const std::string& dbname, const Options& options,
 
 TableCache::~TableCache() { delete cache_; }
 
+// 构造 table cache 中的 key（FileNumber）,对 TableCache 做 Lookup，若存在，则直接获得
+// 对应的 Table。若不存在，则根据 FileNumber 构造出 sstable 的具体路径，Table::Open()，得到具体的 Table,并插入 TableCache。
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
                              Cache::Handle** handle) {
   Status s;
@@ -45,18 +47,25 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
   *handle = cache_->Lookup(key);
+  // 如果没有找到尝试从硬盘中读取
   if (*handle == nullptr) {
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = nullptr;
     Table* table = nullptr;
+    // 打开文件名对应的table文件
+    // PosixMmapReadableFile 或者 PosixRandomAccessFile
+    // PosixMmapReadableFile read时 直接返回一个切片引用， scratch 不用
+    // PosixRandomAccessFile read时 使用 scratch 作为缓冲区
     s = env_->NewRandomAccessFile(fname, &file);
     if (!s.ok()) {
+      // 尝试sst结尾的文件名
       std::string old_fname = SSTTableFileName(dbname_, file_number);
       if (env_->NewRandomAccessFile(old_fname, &file).ok()) {
         s = Status::OK();
       }
     }
     if (s.ok()) {
+      // 从文件中解析 SSTable     footer => indexBlock , metaBlock
       s = Table::Open(options_, file, file_size, &table);
     }
 
@@ -67,14 +76,17 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       // or somebody repairs the file, we recover automatically.
     } else {
       TableAndFile* tf = new TableAndFile;
+      // cache 的 key 为 sstable 的 FileNumber，value 是封装了元信息的 Table 句柄。
       tf->file = file;
       tf->table = table;
+      // 每当新加入 TableCache 时，会获得一个全局唯一 cacheId。
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
     }
   }
   return s;
 }
 
+// 返回 Cache中 file_number对应 Table 的 Iterator，并注册一个析构回调，cache->Release(handle);
 Iterator* TableCache::NewIterator(const ReadOptions& options,
                                   uint64_t file_number, uint64_t file_size,
                                   Table** tableptr) {
@@ -89,7 +101,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   }
 
   Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-  Iterator* result = table->NewIterator(options);
+  Iterator* result = table->NewIterator(options); // TwoLevelIterator
   result->RegisterCleanup(&UnrefEntry, cache_, handle);
   if (tableptr != nullptr) {
     *tableptr = table;

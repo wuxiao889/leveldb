@@ -197,7 +197,7 @@ Status DBImpl::NewDB() {
     new_db.EncodeTo(&record);
     s = log.AddRecord(record);
     if (s.ok()) {
-      s = file->Sync();
+      s = file->Sync(); 
     }
     if (s.ok()) {
       s = file->Close();
@@ -1229,7 +1229,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
       mutex_.Unlock();
       status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
       bool sync_error = false;
-      if (status.ok() && options.sync) {
+      if (status.ok() && options.sync) {  // 根据 WriteOption::sync 决定是否做强制 sync，
         status = logfile_->Sync();
         if (!status.ok()) {
           sync_error = true;

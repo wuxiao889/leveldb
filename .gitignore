@@ -6,3 +6,8 @@
 # Build directory.
 build/
 out/
+
+.cache
+compile_commands.json
+build-vscode
+test

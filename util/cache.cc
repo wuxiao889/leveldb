@@ -34,6 +34,7 @@ namespace {
 //   removed the check, elements that would otherwise be on this list could be
 //   left as disconnected singleton lists.)
 // - LRU:  contains the items not currently referenced by clients, in LRU order
+
 // Elements are moved between these lists by the Ref() and Unref() methods,
 // when they detect an element in the cache acquiring or losing its only
 // external reference.
@@ -80,7 +81,7 @@ class HandleTable {
     LRUHandle** ptr = FindPointer(h->key(), h->hash);
     LRUHandle* old = *ptr;
     h->next_hash = (old == nullptr ? nullptr : old->next_hash);
-    *ptr = h;
+    *ptr = h; // old == nullptr 插入末尾， !nullptr 替换
     if (old == nullptr) {
       ++elems_;
       if (elems_ > length_) {
@@ -113,6 +114,7 @@ class HandleTable {
   // matches key/hash.  If there is no such cache entry, return a
   // pointer to the trailing slot in the corresponding linked list.
   LRUHandle** FindPointer(const Slice& key, uint32_t hash) {
+    // 
     LRUHandle** ptr = &list_[hash & (length_ - 1)];
     while (*ptr != nullptr && ((*ptr)->hash != hash || key != (*ptr)->key())) {
       ptr = &(*ptr)->next_hash;
@@ -192,7 +194,7 @@ class LRUCache {
   // Entries are in use by clients, and have refs >= 2 and in_cache==true.
   LRUHandle in_use_ GUARDED_BY(mutex_);
 
-  HandleTable table_ GUARDED_BY(mutex_);
+  HandleTable table_ GUARDED_BY(mutex_);  // FindPointer => LRUHandle*
 };
 
 LRUCache::LRUCache() : capacity_(0), usage_(0) {
@@ -226,8 +228,10 @@ void LRUCache::Ref(LRUHandle* e) {
 void LRUCache::Unref(LRUHandle* e) {
   assert(e->refs > 0);
   e->refs--;
-  if (e->refs == 0) {  // Deallocate.
-    assert(!e->in_cache);
+  if (e->refs == 0) {  
+    // via Erase(), via Insert() when an element with a duplicate key is inserted,
+    // or on destruction of the cache.
+    assert(!e->in_cache); // FinishErase 
     (*e->deleter)(e->key(), e->value);
     free(e);
   } else if (e->in_cache && e->refs == 1) {
@@ -242,8 +246,8 @@ void LRUCache::LRU_Remove(LRUHandle* e) {
   e->prev->next = e->next;
 }
 
+// Make "e" newest entry by inserting just before *list
 void LRUCache::LRU_Append(LRUHandle* list, LRUHandle* e) {
-  // Make "e" newest entry by inserting just before *list
   e->next = list;
   e->prev = list->prev;
   e->prev->next = e;
@@ -271,7 +275,7 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
   MutexLock l(&mutex_);
 
   LRUHandle* e =
-      reinterpret_cast<LRUHandle*>(malloc(sizeof(LRUHandle) - 1 + key.size()));
+      reinterpret_cast<LRUHandle*>(malloc(sizeof(LRUHandle) - 1 + key.size())); // -1 key_data[0]
   e->value = value;
   e->deleter = deleter;
   e->charge = charge;
@@ -286,13 +290,13 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
     e->in_cache = true;
     LRU_Append(&in_use_, e);
     usage_ += charge;
-    FinishErase(table_.Insert(e));
+    FinishErase(table_.Insert(e));  //将旧节点从链表中移除
   } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
     // next is read by key() in an assert, so it must be initialized
     e->next = nullptr;
   }
   while (usage_ > capacity_ && lru_.next != &lru_) {
-    LRUHandle* old = lru_.next;
+    LRUHandle* old = lru_.next; // oldest
     assert(old->refs == 1);
     bool erased = FinishErase(table_.Remove(old->key(), old->hash));
     if (!erased) {  // to avoid unused variable when compiled NDEBUG
@@ -350,7 +354,7 @@ class ShardedLRUCache : public Cache {
 
  public:
   explicit ShardedLRUCache(size_t capacity) : last_id_(0) {
-    const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
+    const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;  //向上取整
     for (int s = 0; s < kNumShards; s++) {
       shard_[s].SetCapacity(per_shard);
     }
@@ -373,7 +377,7 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     shard_[Shard(hash)].Erase(key, hash);
   }
-  void* Value(Handle* handle) override {
+  void* Value(Handle* handle) override {  // LRUHandle 在匿名空间中
     return reinterpret_cast<LRUHandle*>(handle)->value;
   }
   uint64_t NewId() override {
@@ -394,7 +398,7 @@ class ShardedLRUCache : public Cache {
   }
 };
 
-}  // end anonymous namespace
+}  // end anonymous namespace // 匿名的命名空间,保证生成的符号是局部的,这样对于匿名空间中的变量等,外部都是不可见的.
 
 Cache* NewLRUCache(size_t capacity) { return new ShardedLRUCache(capacity); }
 

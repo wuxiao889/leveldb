@@ -19,6 +19,7 @@ namespace leveldb {
 
 class Env;
 
+// LRU Cache 的封装，缓存了 SStable
 class TableCache {
  public:
   TableCache(const std::string& dbname, const Options& options, int entries);
@@ -53,7 +54,7 @@ class TableCache {
   Env* const env_;
   const std::string dbname_;
   const Options& options_;
-  Cache* cache_;
+  Cache* cache_;    // file_number:TableAndFile*
 };
 
 }  // namespace leveldb

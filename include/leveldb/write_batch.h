@@ -16,7 +16,7 @@
 // Multiple threads can invoke const methods on a WriteBatch without
 // external synchronization, but if any of the threads may call a
 // non-const method, all threads accessing the same WriteBatch must use
-// external synchronization.
+// external synchronization. 
 
 #ifndef STORAGE_LEVELDB_INCLUDE_WRITE_BATCH_H_
 #define STORAGE_LEVELDB_INCLUDE_WRITE_BATCH_H_
@@ -30,6 +30,11 @@ namespace leveldb {
 
 class Slice;
 
+/*
+对若干数目 key 的 write 操作（put/delete）封装成 WriteBatch。它会将 userkey 连同
+SequnceNumber 和 ValueType 先做 encode，然后做 decode，将数据 insert 到指定的 Handler
+（memtable）上面。
+*/
 class LEVELDB_EXPORT WriteBatch {
  public:
   class LEVELDB_EXPORT Handler {

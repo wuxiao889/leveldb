@@ -589,8 +589,8 @@ class VersionSet::Builder {
     FileSet* added_files;
   };
 
-  VersionSet* vset_;
-  Version* base_;
+  VersionSet* vset_;                // 要更新的 VersionSet
+  Version* base_;                   // 基准的Version, compact后，将 current 传入作为 base
   LevelState levels_[config::kNumLevels];
 
  public:
@@ -630,7 +630,7 @@ class VersionSet::Builder {
     // Update compaction pointers
     for (size_t i = 0; i < edit->compact_pointers_.size(); i++) {
       const int level = edit->compact_pointers_[i].first;
-      vset_->compact_pointer_[level] =
+      vset_->compact_pointer_[level] =  // 更新每个 level 的 start_key
           edit->compact_pointers_[i].second.Encode().ToString();
     }
 
@@ -682,12 +682,13 @@ class VersionSet::Builder {
       v->files_[level].reserve(base_files.size() + added_files->size());
       for (const auto& added_file : *added_files) {
         // Add all smaller files listed in base_
+        // 把所有比 added_file 小的文件加入
         for (std::vector<FileMetaData*>::const_iterator bpos =
                  std::upper_bound(base_iter, base_end, added_file, cmp);
              base_iter != bpos; ++base_iter) {
           MaybeAddFile(v, level, *base_iter);
         }
-
+        // 然后加入 added_file
         MaybeAddFile(v, level, added_file);
       }
 

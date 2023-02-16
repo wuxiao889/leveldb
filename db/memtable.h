@@ -74,6 +74,8 @@ class MemTable {
 
   typedef SkipList<const char*, KeyComparator> Table;
 
+  // 私有析构函数，保证对象只能创建在堆上，
+  // 在编译期检查，栈上生成的对象不能访问析构函数，
   ~MemTable();  // Private since only Unref() should be used to delete it
 
   KeyComparator comparator_;

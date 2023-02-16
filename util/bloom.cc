@@ -27,26 +27,28 @@ class BloomFilterPolicy : public FilterPolicy {
 
   void CreateFilter(const Slice* keys, int n, std::string* dst) const override {
     // Compute bloom filter size (in both bits and bytes)
-    size_t bits = n * bits_per_key_;
+    // 计算 bloom filter 的 bit 数组长度 n，会除以 8 向上取整，因为 bit 数组最后会用 char 数组表示
+    size_t bits = n * bits_per_key_; // 需要的过滤器位数大小。
 
     // For small n, we can see a very high false positive rate.  Fix it
     // by enforcing a minimum bloom filter length.
-    if (bits < 64) bits = 64;
+    if (bits < 64) bits = 64; // 如果数组太短，会有很高的误判率，因此这里增加了一个最小长度限定。
 
-    size_t bytes = (bits + 7) / 8;
+    size_t bytes = (bits + 7) / 8;    // 字节数取整
     bits = bytes * 8;
 
     const size_t init_size = dst->size();
     dst->resize(init_size + bytes, 0);
-    dst->push_back(static_cast<char>(k_));  // Remember # of probes in filter
-    char* array = &(*dst)[init_size];
+    dst->push_back(static_cast<char>(k_));  // Remember # of probes in filter 数组最后存放哈希函数个数k, 判断在不在是要用到
+    char* array = &(*dst)[init_size]; // ()[] 优先级最高， *&优先级次之
     for (int i = 0; i < n; i++) {
+      // 使用 double-hashing 方法，仅使用一个 hash 函数来生成 k 个 hash 值，近似等价于使用 k 个哈希函数的效果
       // Use double-hashing to generate a sequence of hash values.
       // See analysis in [Kirsch,Mitzenmacher 2006].
       uint32_t h = BloomHash(keys[i]);
-      const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
+      const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits 循环右移17位，第17位与高15位交换顺序
       for (size_t j = 0; j < k_; j++) {
-        const uint32_t bitpos = h % bits;
+        const uint32_t bitpos = h % bits;   // 用char数组，每char 8 位， bitpos / 8表示在那个char中，1 << bitpos % 8 表示在char的哪一位
         array[bitpos / 8] |= (1 << (bitpos % 8));
         h += delta;
       }

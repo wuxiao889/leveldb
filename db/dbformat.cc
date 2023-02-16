@@ -53,7 +53,8 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
   if (r == 0) {
     const uint64_t anum = DecodeFixed64(akey.data() + akey.size() - 8);
     const uint64_t bnum = DecodeFixed64(bkey.data() + bkey.size() - 8);
-    if (anum > bnum) {
+    if (anum > bnum) {    // 对sequence降序 SequnceNumber 大的为小。因为 SequnceNumber 在 db 中全局
+                          // 递增，所以，对于相同的 user-key，最新的更新（SequnceNumber 更大）排在前面
       r = -1;
     } else if (anum < bnum) {
       r = +1;
@@ -114,9 +115,10 @@ bool InternalFilterPolicy::KeyMayMatch(const Slice& key, const Slice& f) const {
   return user_policy_->KeyMayMatch(ExtractUserKey(key), f);
 }
 
+// varint32 user_key sequencenum valuetype
 LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   size_t usize = user_key.size();
-  size_t needed = usize + 13;  // A conservative estimate
+  size_t needed = usize + 13;  // A conservative estimate 保守的估计 8 + 5
   char* dst;
   if (needed <= sizeof(space_)) {
     dst = space_;
@@ -124,11 +126,11 @@ LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
     dst = new char[needed];
   }
   start_ = dst;
-  dst = EncodeVarint32(dst, usize + 8);
+  dst = EncodeVarint32(dst, usize + 8);     // klength
   kstart_ = dst;
-  std::memcpy(dst, user_key.data(), usize);
+  std::memcpy(dst, user_key.data(), usize); // user_key
   dst += usize;
-  EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
+  EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek)); // seq valueType
   dst += 8;
   end_ = dst;
 }

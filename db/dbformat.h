@@ -22,15 +22,19 @@ namespace leveldb {
 // Grouping of constants.  We may want to make some of these
 // parameters set via options.
 namespace config {
+// level最大值
 static const int kNumLevels = 7;
 
 // Level-0 compaction is started when we hit this many files.
+// level-0 中 sstable数量超过了这个阈值，触发 compact
 static const int kL0_CompactionTrigger = 4;
 
 // Soft limit on number of level-0 files.  We slow down writes at this point.
+// level-0 中 sstable数量超过了8，慢处理此次写
 static const int kL0_SlowdownWritesTrigger = 8;
 
 // Maximum number of level-0 files.  We stop writes at this point.
+// level-0 中 sstable数量超过了12，阻塞至compact memtable完成
 static const int kL0_StopWritesTrigger = 12;
 
 // Maximum level to which a new compacted memtable is pushed if it
@@ -39,10 +43,11 @@ static const int kL0_StopWritesTrigger = 12;
 // expensive manifest file operations.  We do not push all the way to
 // the largest level since that can generate a lot of wasted disk
 // space if the same key space is being repeatedly overwritten.
+// // （参见 Compact 流程的 VersionSet::PickLevelForMemTableOutput()）
 static const int kMaxMemCompactLevel = 2;
 
 // Approximate gap in bytes between samples of data read during iteration.
-static const int kReadBytesPeriod = 1048576;
+static const int kReadBytesPeriod = 1048576; // 2^20 1M
 
 }  // namespace config
 
@@ -57,13 +62,13 @@ enum ValueType { kTypeDeletion = 0x0, kTypeValue = 0x1 };
 // sequence number (since we sort sequence numbers in decreasing order
 // and the value type is embedded as the low 8 bits in the sequence
 // number in internal keys, we need to use the highest-numbered
-// ValueType, not the lowest).
+// ValueType, not the lowest). 
 static const ValueType kValueTypeForSeek = kTypeValue;
 
 typedef uint64_t SequenceNumber;
 
 // We leave eight bits empty at the bottom so a type and sequence#
-// can be packed together into 64-bits.
+// can be packed together into 64-bits. // 留下一字节 ValueType
 static const SequenceNumber kMaxSequenceNumber = ((0x1ull << 56) - 1);
 
 struct ParsedInternalKey {
@@ -172,8 +177,8 @@ inline bool ParseInternalKey(const Slice& internal_key,
                              ParsedInternalKey* result) {
   const size_t n = internal_key.size();
   if (n < 8) return false;
-  uint64_t num = DecodeFixed64(internal_key.data() + n - 8);
-  uint8_t c = num & 0xff;
+  uint64_t num = DecodeFixed64(internal_key.data() + n - 8);  // 取最后8字节
+  uint8_t c = num & 0xff; // 最后一字节ValueType
   result->sequence = num >> 8;
   result->type = static_cast<ValueType>(c);
   result->user_key = Slice(internal_key.data(), n - 8);

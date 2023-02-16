@@ -179,7 +179,7 @@ struct SkipList<Key, Comparator>::Node {
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
     const Key& key, int height) {
-  char* const node_memory = arena_->AllocateAligned(
+  char* const node_memory = arena_->AllocateAligned(  // sizeof(Node) = sizeof(key) + sizeof(std::atomic<Node*>) * 1;
       sizeof(Node) + sizeof(std::atomic<Node*>) * (height - 1));
   return new (node_memory) Node(key);
 }
@@ -378,3 +378,9 @@ bool SkipList<Key, Comparator>::Contains(const Key& key) const {
 }  // namespace leveldb
 
 #endif  // STORAGE_LEVELDB_DB_SKIPLIST_H_
+
+/*
+跳表每个节点都会有 1 ~ MaxLevel 个指针，有 k 个指针的节点称为 k 层节点（level knode）； 
+所有节点的层次数的最大值为跳表的最大层数（MaxLevel）。
+跳表带有一个空的头结点，头结点有MaxLevel 个指针。
+*/
