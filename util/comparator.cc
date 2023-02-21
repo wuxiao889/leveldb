@@ -52,6 +52,7 @@ class BytewiseComparatorImpl : public Comparator {
     }
   }
 
+  // "abc" => "b"
   void FindShortSuccessor(std::string* key) const override {
     // Find first character that can be incremented
     size_t n = key->size();
@@ -69,6 +70,12 @@ class BytewiseComparatorImpl : public Comparator {
 }  // namespace
 
 const Comparator* BytewiseComparator() {
+  // static BytewiseComparatorImpl* singleton = new BytewiseComparatorImpl;
+  // lead to an extra level of indirection and touching of an extra cache line ?? 
+  // 不会调用 BytewiseComparatorImpl 的析构函数
+  // https://google.github.io/styleguide/cppguide.html#Static_and_Global_Variables
+  // https://www.zhihu.com/question/497429375
+  // https://zhuanlan.zhihu.com/p/273437088
   static NoDestructor<BytewiseComparatorImpl> singleton;
   return singleton.get();
 }

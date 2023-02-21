@@ -39,6 +39,7 @@ void VersionEdit::Clear() {
   new_files_.clear();
 }
 
+// 按需编码tag和成员属性，而不是将所有成员编码。
 void VersionEdit::EncodeTo(std::string* dst) const {
   if (has_comparator_) {
     PutVarint32(dst, kComparator);

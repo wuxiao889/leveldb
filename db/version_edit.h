@@ -19,11 +19,11 @@ struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
 
   int refs;
-  int allowed_seeks;  // Seeks allowed until compaction
-  uint64_t number;
-  uint64_t file_size;    // File size in bytes
-  InternalKey smallest;  // Smallest internal key served by table
-  InternalKey largest;   // Largest internal key served by table
+  int allowed_seeks;      // Seeks allowed until compaction，如果某个文件被seek了太多次，说明需要压缩
+  uint64_t number;        // 文件序列号
+  uint64_t file_size;     // File size in bytes
+  InternalKey smallest;   // Smallest internal key served by table
+  InternalKey largest;    // Largest internal key served by table
 };
 
 // A Compaction encapsulates information about a compaction.
@@ -91,9 +91,10 @@ class VersionEdit {
   typedef std::set<std::pair<int, uint64_t>> DeletedFileSet;
 
   std::string comparator_;    // 用 comparator 名字保证排序逻辑
-  uint64_t log_number_;
+  uint64_t log_number_;       // 日志文件序号，与 memtable 一一对应。当一个 memtable 生成为 sstable 后会将旧的日志文件删除
+                              // 生成一个新的日志文件。日志文件形如 [\d]+.log
   uint64_t prev_log_number_;
-  uint64_t next_file_number_;
+  uint64_t next_file_number_;   // 下一个文件序号。leveldb中文件包括日志文件、sstable文件、manifest文件。
   SequenceNumber last_sequence_;
   bool has_comparator_;
   bool has_log_number_;
@@ -101,8 +102,12 @@ class VersionEdit {
   bool has_next_file_number_;
   bool has_last_sequence_;
 
-  std::vector<std::pair<int, InternalKey>> compact_pointers_; // 要更新的level
-  DeletedFileSet deleted_files_;    // 要删除的 sstable文件
+  // 指示每个层级下一次进行 compaction 操作时需要从哪个键开始
+  // 对于每个层级 L，会记录上次进行 compact 时的最大键
+  // L层下一次进行 compact 选取文件时，选取所有 最小键大于记录的最大键，
+  // 即每一次的 compact 都会在该层空间循环执行
+  std::vector<std::pair<int, InternalKey>> compact_pointers_; 
+  DeletedFileSet deleted_files_;    // 记录每个层级只从 compact 之后要删除的文件
   std::vector<std::pair<int, FileMetaData>> new_files_; // compact output
 };
 

@@ -42,6 +42,7 @@ class WritableFile;
 // Return the smallest index i such that files[i]->largest >= key.
 // Return files.size() if there is no such file.
 // REQUIRES: "files" contains a sorted list of non-overlapping files.
+// 在某个level中找到第一个 largset_key >= key 的文件
 int FindFile(const InternalKeyComparator& icmp,
              const std::vector<FileMetaData*>& files, const Slice& key);
 
@@ -129,7 +130,7 @@ class Version {
 
   class LevelFileNumIterator;
 
-  explicit Version(VersionSet* vset)
+  explicit Version(VersionSet* vset)  // 私有构造函数，强制对象生成在堆上
       : vset_(vset),
         next_(this),
         prev_(this),
@@ -177,7 +178,14 @@ class Version {
 };
 
 /*
+leveldb 中 两种 compaction 策略
+  size_compaction
+  seek_compaction
+*/
 
+
+
+/*
 compaction_score_
 
 leveldb 中分 level 管理 sstable，对于写，可以认为与 sstable 无关。
@@ -443,8 +451,8 @@ class Compaction {
 
   int level_;
   uint64_t max_output_file_size_; // 生成sstable的最大size
-  Version* input_version_;        // compact当时version
-  VersionEdit edit_;              // compact过程中的操作
+  Version* input_version_;        // compact时的version
+  VersionEdit edit_;              // compact的修改
 
   // Each compaction reads inputs from "level_" and "level_+1"
   // inputs_[0]: 为 level-n sstable 文件信息

@@ -853,6 +853,7 @@ void PosixEnv::Schedule(
   background_work_mutex_.Lock();
 
   // Start the background thread, if we haven't done so already.
+  // 第一次调度时创建 background 线程
   if (!started_background_thread_) {
     started_background_thread_ = true;
     std::thread background_thread(PosixEnv::BackgroundThreadEntryPoint, this);

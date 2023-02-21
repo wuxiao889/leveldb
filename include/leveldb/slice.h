@@ -24,6 +24,10 @@
 
 namespace leveldb {
 
+// 切片，类似 c++11 string_view
+// 将数据和长度包装为 slice，直接控制指针。
+// 避免了 std::string 不必要的拷贝
+// 不以 '\0' 为结尾，可以存储包含 '\0' 的字符串
 class LEVELDB_EXPORT Slice {
  public:
   // Create an empty slice.
@@ -33,6 +37,7 @@ class LEVELDB_EXPORT Slice {
   Slice(const char* d, size_t n) : data_(d), size_(n) {}
 
   // Create a slice that refers to the contents of "s"
+  // 兼容 std::string
   Slice(const std::string& s) : data_(s.data()), size_(s.size()) {}
 
   // Create a slice that refers to s[0,strlen(s)-1]
@@ -72,6 +77,7 @@ class LEVELDB_EXPORT Slice {
   }
 
   // Return a string that contains the copy of the referenced data.
+  // 返回一个引用数据的拷贝
   std::string ToString() const { return std::string(data_, size_); }
 
   // Three-way comparison.  Returns value:
